@@ -32,15 +32,14 @@ class IRCBot:
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     addr = (server, port)
     self._socket.connect(addr)
-    self._connected = True
     self.run_connected()
-    pass
 
   """ self-explanatory """
   def disconnect(self):
-    self._connected = False
-    self._socket.close()
     self._socket_file.close()
+    self._socket.shutdown(socket.SHUT_RDWR)
+    self._socket.close()
+    self._connected = False
 
   """ work after having created the socket """
   def run_connected(self):
@@ -82,15 +81,16 @@ class IRCBot:
     self._execution_thread = Thread(target = self.poll_exec_queue)
     self._irc_thread.start()
     self._execution_thread.start()
-    self._execution_thread.join()
-    self._irc_thread.join()
+    while (self._execution_thread.isAlive() or self._irc_thread.isAlive()) and self._connected:
+      self._execution_thread.join(1)
+      self._irc_thread.join(1)
+    print("out of start_threads")
 
   """ main IRC loop. Gets messages, puts callbacks in the execution queue. """
   def irc_loop(self):
     line = self._socket_file.readline().rstrip()
     reg_privmsg = re.compile(r"^:(\S+)!(\S+) PRIVMSG (\S+) :(.*)$")
     while line!='' and self._connected:
-      line = self._socket_file.readline().rstrip()
       # handle recv callbacks
       callbacks = [ x for x in self._recvcallbacks if (x[0].match(line)) is not None ]
       for i in callbacks:
@@ -101,9 +101,12 @@ class IRCBot:
         host = match.group(2)
         dest = match.group(3)
         mesg = match.group(4)
-        callbacks = [ x for x in self._privmsgcallbacks if x[0].match(mesg) is not None ]
+        callbacks = [ x for x in self._privmsgcallbacks 
+          if x[0].match(mesg) is not None ]
         for c in callbacks:
           self.add_callback(lambda: c[1](user, host, dest, mesg))
+      line = self._socket_file.readline().rstrip()
+      sleep(0.1)
 
   """ the callback runner """
   def poll_exec_queue(self):
@@ -138,16 +141,18 @@ class IRCBot:
 
 if (__name__ == '__main__'):
   print("Invoked")
-  try:
-    c = IRCBot()
-    def exampleexitcallback(user, host, dest, mesg):
-      if (user == 'ChloeD'):
-        print("Oh, hello ChloeD")
-        c.send_chat("#bottest", "I'm leaving now")
-        c.disconnect()
-        sys.exit(0)
-    c.add_privmsg_callback(re.compile("!exit"), exampleexitcallback)
-    c.connect("irc.freenode.net", 6667)
-  except SystemExit, KeyboardInterrupt:
-    raise
-  
+  c = IRCBot()
+  def exampleexitcallback(user, host, dest, mesg):
+    if (user == 'ChloeD'):
+      print("Oh, hello ChloeD")
+      c.send_chat("#bottest", "I'm leaving now")
+      c.disconnect()
+      sys.exit(0)
+  def fortunecallback(user, host, dest, mesg):
+    from subprocess import PIPE, Popen
+    txt = Popen("fortune", stdout=PIPE).stdout.read()
+    c.send_chat(dest, txt)
+    
+  c.add_privmsg_callback(re.compile("!exit"), exampleexitcallback)
+  c.add_privmsg_callback(re.compile("!fortune"), fortunecallback)
+  c.connect("irc.freenode.net", 6667)
