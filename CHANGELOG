@@ -1,0 +1,5 @@
+2015-07-12
+  Added networkedbot support, bots will sync each other. No functionality
+  implemented, on purpose. Bots just chill around and reckognize each other.
+  Use the !whoyouknow trigger for test purposes.
+

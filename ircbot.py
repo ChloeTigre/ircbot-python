@@ -27,9 +27,13 @@ class IRCBot:
   _recvcallbacks = []
   _privmsgcallbacks = []
 
+  def __init__(self, nick):
+    self._nick = nick
+
   """ self-explanatory. ipv4 only for the moment """
-  def connect(self, server, port):
+  def connect(self, server, port, channel):
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._channel = channel
     addr = (server, port)
     self._socket.connect(addr)
     self.run_connected()
@@ -43,16 +47,15 @@ class IRCBot:
 
   """ work after having created the socket """
   def run_connected(self):
-    self._socket_file = self._socket.makefile('r')
+    self._socket_file = self._socket.makefile('r', encoding='ISO-8859-15')
     self._connected = True
-    self.add_callback(lambda: self.connect_user("IRCbotpy", "An IRCbotpy user"))
-    self.add_callback(lambda: self.join_channel_sync("#bottest", "Hello, world"))
+    self.add_callback(lambda: self.connect_user(self._nick, "An IRCbotpy user"))
     self.start_threads()
 
   """ send message through socket """
   def send_message(self, message):
     print("Sending",message)
-    return self._socket.send(message+"\r\n")
+    return self._socket.send(bytes(message+"\r\n", 'ISO-8859-15'))
 
   """ add a callback independent from the messages received, like an urgent
   callback of any sort. 
@@ -84,7 +87,6 @@ class IRCBot:
     while (self._execution_thread.isAlive() or self._irc_thread.isAlive()) and self._connected:
       self._execution_thread.join(1)
       self._irc_thread.join(1)
-    print("out of start_threads")
 
   """ main IRC loop. Gets messages, puts callbacks in the execution queue. """
   def irc_loop(self):
@@ -95,6 +97,7 @@ class IRCBot:
       callbacks = [ x for x in self._recvcallbacks if (x[0].match(line)) is not None ]
       for i in callbacks:
         i[1]()
+        callbacks.remove(i)
       match = reg_privmsg.match(line)
       if (match is not None):
         user = match.group(1)
@@ -106,14 +109,14 @@ class IRCBot:
         for c in callbacks:
           self.add_callback(lambda: c[1](user, host, dest, mesg))
       line = self._socket_file.readline().rstrip()
-      sleep(0.1)
+      sleep(0.01)
 
   """ the callback runner """
   def poll_exec_queue(self):
     while self._connected:
       while len(self._callbacks) > 0:
         self._callbacks.pop()()
-      sleep(1)
+      sleep(0.01)
 
   """ utility IRC functions """
   def connect_user(self, nickname, description):
@@ -122,6 +125,7 @@ class IRCBot:
     self.send_message("USER %s 0 * :%s" % (nickname, description))
 
   def join_channel(self, channel):
+    print("Join", channel)
     self._channel = channel
     self.send_message("JOIN %s" % (channel))
 
@@ -133,6 +137,11 @@ class IRCBot:
     self.add_regex_callback(reg, _jc)
     self.join_channel(channel)
 
+  def join_channel_then_cb(self, channel, callback):
+    reg = re.compile(".*JOIN %s$" % (channel))
+    self.add_regex_callback(reg, callback)
+    self.join_channel(channel)
+
   def send_chat(self, destination, contents):
     contents = contents.rstrip()
     for line in contents.split('\n'):
@@ -141,7 +150,7 @@ class IRCBot:
 
 if (__name__ == '__main__'):
   print("Invoked")
-  c = IRCBot()
+  c = IRCBot("IRCbotPy")
   def exampleexitcallback(user, host, dest, mesg):
     if (user == 'ChloeD'):
       print("Oh, hello ChloeD")
@@ -155,4 +164,4 @@ if (__name__ == '__main__'):
     
   c.add_privmsg_callback(re.compile("!exit"), exampleexitcallback)
   c.add_privmsg_callback(re.compile("!fortune"), fortunecallback)
-  c.connect("irc.freenode.net", 6667)
+  c.connect("irc.freenode.net", 6667, "#bottest")
