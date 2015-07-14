@@ -28,10 +28,11 @@ class Botsync:
   known_results = dict()
 
   """TODO: fetch the channel from the irc connector"""
-  def __init__(self, irc, channel):
+  def __init__(self, irc, channel, capacity = 3):
     self.unique_id = str(uuid.uuid4())
     self._irc = irc
     self._channel = channel
+    self._capacity = capacity
   
   """Add a work executor"""
   def add_work_executor(self, cutor):
@@ -86,8 +87,9 @@ class Botsync:
   def handle_job_proposal(self, user, host, dest, mesg):
     _, jobid, parameters = mesg.split(sep=':', maxsplit=3)
     print(self._irc._nick,"handle_job_proposal",(jobid,parameters))
-    self.recved_jobs_pending.append((jobid, parameters))
-    self._irc.send_chat(user, "CLAIM:"+jobid)
+    if len(self.recved_jobs_pending) < self._capacity:
+      self.recved_jobs_pending.append((jobid, parameters))
+      self._irc.send_chat(user, "CLAIM:"+jobid)
 
   """handle job result"""
   def handle_job_result(self, user, host, dest, mesg):
@@ -209,7 +211,7 @@ class StupidMathsWorker:
 
 if __name__ == '__main__':
   import sys
-  c = IRCBot(sys.argv[1])
+  c = IRCBot(sys.argv[1], verbosity=True)
   def exampleexitcallback(user, host, dest, mesg):
     if (user == 'ChloeD'):
       print("Oh, hello ChloeD")

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # encoding: utf-8
 # © 2015 Chloé Tigre Rouge Desoutter
 # MIT license - See LICENSE
@@ -27,7 +27,10 @@ class IRCBot:
   _recvcallbacks = []
   _privmsgcallbacks = []
 
-  def __init__(self, nick):
+  _ponged = False
+
+  def __init__(self, nick, verbosity = None):
+    self._debug = print if verbosity is not None else lambda *a, **k: None
     self._nick = nick
 
   """ self-explanatory. ipv4 only for the moment """
@@ -54,7 +57,7 @@ class IRCBot:
 
   """ send message through socket """
   def send_message(self, message):
-    print("Sending",message)
+    self._debug("Sending",message)
     return self._socket.send(bytes(message+"\r\n", 'ISO-8859-15'))
 
   """ add a callback independent from the messages received, like an urgent
@@ -92,14 +95,16 @@ class IRCBot:
   def irc_loop(self):
     line = self._socket_file.readline().rstrip()
     reg_privmsg = re.compile(r"^:(\S+)!(\S+) PRIVMSG (\S+) :(.*)$")
+    reg_ping = re.compile(r"PING :(.+)")
     while line!='' and self._connected:
+      self._debug(line)
       # handle recv callbacks
       callbacks = [ x for x in self._recvcallbacks if (x[0].match(line)) is not None ]
       for i in callbacks:
         i[1]()
         callbacks.remove(i)
       match = reg_privmsg.match(line)
-      if (match is not None):
+      if match is not None:
         user = match.group(1)
         host = match.group(2)
         dest = match.group(3)
@@ -108,6 +113,13 @@ class IRCBot:
           if x[0].match(mesg) is not None ]
         for c in callbacks:
           self.add_callback(lambda: c[1](user, host, dest, mesg))
+      else:
+        m = reg_ping.match(line)
+        if m is not None:
+          self._debug("ping line",line)
+          self._ponged = True
+          ping = str(m.group(1))
+          self.send_message("PONG :"+ping)
       line = self._socket_file.readline().rstrip()
       sleep(0.01)
 
@@ -125,13 +137,13 @@ class IRCBot:
     self.send_message("USER %s 0 * :%s" % (nickname, description))
 
   def join_channel(self, channel):
-    print("Join", channel)
+    self._debug("Join", channel)
     self._channel = channel
     self.send_message("JOIN %s" % (channel))
 
   def join_channel_sync(self, channel, message):
     def _jc():
-      print("have connected")
+      self._debug("have connected")
       self.send_chat(channel, message)
     reg = re.compile(".*JOIN %s$" % (channel))
     self.add_regex_callback(reg, _jc)
